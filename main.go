@@ -5,14 +5,13 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"sync"
 	"time"
 )
 
 var port string
 
 type state struct {
-	lock  sync.Mutex
+	//lock  sync.Mutex
 	peers []string
 }
 
@@ -42,6 +41,9 @@ func recieveGossip(port string) {
 		}
 
 		go handleGossip(conn)
+		fmt.Printf("============\n")
+		fmt.Printf("Current Peers: %s\n", peersState.peers)
+		fmt.Printf("============\n")
 	}
 }
 
@@ -55,37 +57,51 @@ func handleGossip(conn net.Conn) {
 		fmt.Println("Error: ", err.Error())
 	}
 
-	data := strings.Split(string(buf), ":")
+	parseReceivedData(buf)
+}
+
+func parseReceivedData(dataBuffer []byte) {
+	data := strings.Split(string(dataBuffer), ":")
 	peer := data[0]
 	peerList := strings.Split(data[1], ",")
 
-	newPeers := make([]string, 0)
-	for _, p := range peerList {
-		newPeers = append(newPeers, strings.Trim(p, "\x00"))
-	}
+	newPeers := cleanNullBytes(peerList)
 
 	fmt.Printf("============\n")
-	fmt.Printf("Current Peers: %s\n", peersState.peers)
+	fmt.Printf("Received %s from %s\n", newPeers, peer)
 	fmt.Printf("============\n")
 
 	newPeers = append(newPeers, peer)
+
+	//peersState.lock.Lock()
+	//defer peersState.lock.Unlock()
 
 	m := make(map[string]bool)
 	for _, item := range peersState.peers {
 		m[item] = true
 	}
 
+	peersState.peers = append(peersState.peers, updatePeersState(port, newPeers, m)...)
+}
+
+func cleanNullBytes(peerList []string) []string {
+	peers := make([]string, 0)
+	for _, p := range peerList {
+		peers = append(peers, strings.Trim(p, "\x00"))
+	}
+	return peers
+}
+
+func updatePeersState(port string, newPeers []string, existingPeers map[string]bool) []string {
+	currentPeers := make([]string, 0)
 	for _, p := range newPeers {
 		if p != port {
-			if _, ok := m[p]; !ok {
-				peersState.peers = append(peersState.peers, p)
+			if _, ok := existingPeers[p]; !ok {
+				currentPeers = append(currentPeers, p)
 			}
 		}
 	}
-
-	fmt.Printf("============\n")
-	fmt.Printf("Current Peers: %s\n", peersState.peers)
-	fmt.Printf("============\n")
+	return currentPeers
 }
 
 func timeGossiping(do func()) {
